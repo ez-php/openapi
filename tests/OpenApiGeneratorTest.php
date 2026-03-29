@@ -61,10 +61,8 @@ final class OpenApiGeneratorTest extends TestCase
         self::assertArrayHasKey('/ping', $spec['paths']);
 
         $paths = $spec['paths'];
-        self::assertIsArray($paths['/ping']);
 
         $pingPath = $paths['/ping'];
-        self::assertIsArray($pingPath['get']);
 
         $getOp = $pingPath['get'];
         self::assertIsArray($getOp['responses']);
@@ -83,9 +81,7 @@ final class OpenApiGeneratorTest extends TestCase
         $spec = $generator->generate()->toArray();
 
         $paths = $spec['paths'];
-        self::assertIsArray($paths['/users']);
         $usersPath = $paths['/users'];
-        self::assertIsArray($usersPath['get']);
         $getOp = $usersPath['get'];
 
         self::assertSame('List users', $getOp['summary']);
@@ -99,9 +95,7 @@ final class OpenApiGeneratorTest extends TestCase
         $spec = $generator->generate()->toArray();
 
         $paths = $spec['paths'];
-        self::assertIsArray($paths['/users']);
         $usersPath = $paths['/users'];
-        self::assertIsArray($usersPath['get']);
         $getOp = $usersPath['get'];
 
         self::assertSame('Returns all active users', $getOp['description']);
@@ -115,9 +109,7 @@ final class OpenApiGeneratorTest extends TestCase
         $spec = $generator->generate()->toArray();
 
         $paths = $spec['paths'];
-        self::assertIsArray($paths['/users']);
         $usersPath = $paths['/users'];
-        self::assertIsArray($usersPath['get']);
         $getOp = $usersPath['get'];
 
         self::assertSame(['users'], $getOp['tags']);
@@ -131,9 +123,7 @@ final class OpenApiGeneratorTest extends TestCase
         $spec = $generator->generate()->toArray();
 
         $paths = $spec['paths'];
-        self::assertIsArray($paths['/ping']);
         $pingPath = $paths['/ping'];
-        self::assertIsArray($pingPath['get']);
         $getOp = $pingPath['get'];
 
         self::assertArrayNotHasKey('summary', $getOp);
@@ -149,9 +139,7 @@ final class OpenApiGeneratorTest extends TestCase
         $spec = $generator->generate()->toArray();
 
         $paths = $spec['paths'];
-        self::assertIsArray($paths['/users']);
         $usersPath = $paths['/users'];
-        self::assertIsArray($usersPath['get']);
         $getOp = $usersPath['get'];
         self::assertIsArray($getOp['responses']);
 
@@ -171,9 +159,7 @@ final class OpenApiGeneratorTest extends TestCase
         $spec = $generator->generate()->toArray();
 
         $paths = $spec['paths'];
-        self::assertIsArray($paths['/users/{id}']);
         $userPath = $paths['/users/{id}'];
-        self::assertIsArray($userPath['get']);
         $getOp = $userPath['get'];
         self::assertIsArray($getOp['responses']);
 
@@ -190,9 +176,7 @@ final class OpenApiGeneratorTest extends TestCase
         $spec = $generator->generate()->toArray();
 
         $paths = $spec['paths'];
-        self::assertIsArray($paths['/users/{id}']);
         $userPath = $paths['/users/{id}'];
-        self::assertIsArray($userPath['get']);
         $getOp = $userPath['get'];
         self::assertIsArray($getOp['responses']);
 
@@ -223,9 +207,7 @@ final class OpenApiGeneratorTest extends TestCase
         $spec = $generator->generate()->toArray();
 
         $paths = $spec['paths'];
-        self::assertIsArray($paths['/items']);
         $itemsPath = $paths['/items'];
-        self::assertIsArray($itemsPath['post']);
         $postOp = $itemsPath['post'];
         self::assertIsArray($postOp['responses']);
 
@@ -242,9 +224,7 @@ final class OpenApiGeneratorTest extends TestCase
         $spec = $generator->generate()->toArray();
 
         $paths = $spec['paths'];
-        self::assertIsArray($paths['/search']);
         $searchPath = $paths['/search'];
-        self::assertIsArray($searchPath['get']);
         $getOp = $searchPath['get'];
         self::assertIsArray($getOp['parameters']);
 
@@ -270,9 +250,7 @@ final class OpenApiGeneratorTest extends TestCase
         $spec = $generator->generate()->toArray();
 
         $paths = $spec['paths'];
-        self::assertIsArray($paths['/users/{id}']);
         $userPath = $paths['/users/{id}'];
-        self::assertIsArray($userPath['get']);
         $getOp = $userPath['get'];
         self::assertIsArray($getOp['parameters']);
 
@@ -295,9 +273,7 @@ final class OpenApiGeneratorTest extends TestCase
         $spec = $generator->generate()->toArray();
 
         $paths = $spec['paths'];
-        self::assertIsArray($paths['/users/{id}']);
         $userPath = $paths['/users/{id}'];
-        self::assertIsArray($userPath['get']);
         $getOp = $userPath['get'];
         self::assertIsArray($getOp['parameters']);
 
@@ -315,9 +291,7 @@ final class OpenApiGeneratorTest extends TestCase
         $spec = $generator->generate()->toArray();
 
         $paths = $spec['paths'];
-        self::assertIsArray($paths['/users/{id}']);
         $userPath = $paths['/users/{id}'];
-        self::assertIsArray($userPath['get']);
         $getOp = $userPath['get'];
         self::assertIsArray($getOp['parameters']);
 
@@ -337,9 +311,7 @@ final class OpenApiGeneratorTest extends TestCase
         $spec = $generator->generate()->toArray();
 
         $paths = $spec['paths'];
-        self::assertIsArray($paths['/posts/{slug}']);
         $postPath = $paths['/posts/{slug}'];
-        self::assertIsArray($postPath['delete']);
         $deleteOp = $postPath['delete'];
         self::assertIsArray($deleteOp['parameters'] ?? null);
 
@@ -363,9 +335,7 @@ final class OpenApiGeneratorTest extends TestCase
         $spec = $generator->generate()->toArray();
 
         $paths = $spec['paths'];
-        self::assertIsArray($paths['/users/{id}']);
         $userPath = $paths['/users/{id}'];
-        self::assertIsArray($userPath['get']);
         $getOp = $userPath['get'];
         self::assertIsArray($getOp['parameters']);
 
@@ -392,12 +362,10 @@ final class OpenApiGeneratorTest extends TestCase
         self::assertArrayHasKey('/users', $paths);
         self::assertArrayHasKey('/users/{id}', $paths);
 
-        self::assertIsArray($paths['/users']);
         $usersPath = $paths['/users'];
         self::assertArrayHasKey('get', $usersPath);
         self::assertArrayHasKey('post', $usersPath);
 
-        self::assertIsArray($paths['/users/{id}']);
         $userPath = $paths['/users/{id}'];
         self::assertArrayHasKey('get', $userPath);
     }
@@ -415,9 +383,7 @@ final class OpenApiGeneratorTest extends TestCase
         $paths = $spec['paths'];
         self::assertArrayHasKey('/missing', $paths);
 
-        self::assertIsArray($paths['/missing']);
         $missingPath = $paths['/missing'];
-        self::assertIsArray($missingPath['get']);
         $getOp = $missingPath['get'];
         self::assertIsArray($getOp['responses']);
 
