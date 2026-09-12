@@ -54,6 +54,65 @@ final class OpenApiSpecTest extends TestCase
         self::assertArrayHasKey('get', $array['paths']['/users']);
     }
 
+    public function testToArrayOmitsComponentsWhenNoneProvided(): void
+    {
+        $spec = new OpenApiSpec('API', '1.0.0', []);
+
+        self::assertArrayNotHasKey('components', $spec->toArray());
+    }
+
+    public function testToArrayContainsProvidedComponents(): void
+    {
+        $components = [
+            'schemas' => [
+                'User' => [
+                    'type' => 'object',
+                    'properties' => ['id' => ['type' => 'integer']],
+                ],
+            ],
+        ];
+
+        $spec = new OpenApiSpec('API', '1.0.0', [], $components);
+
+        $array = $spec->toArray();
+
+        self::assertArrayHasKey('components', $array);
+        self::assertSame($components, $array['components'] ?? null);
+    }
+
+    public function testProvidedComponentsResolveResponseRefs(): void
+    {
+        // A $ref emitted by OpenApiGenerator points at #/components/schemas/<ShortName>.
+        // Supplying the matching component makes that reference resolvable.
+        $paths = [
+            '/users' => [
+                'get' => [
+                    'responses' => [
+                        '200' => [
+                            'description' => 'OK',
+                            'content' => [
+                                'application/json' => [
+                                    'schema' => ['$ref' => '#/components/schemas/User'],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        $spec = new OpenApiSpec('API', '1.0.0', $paths, ['schemas' => ['User' => ['type' => 'object']]]);
+
+        $array = $spec->toArray();
+
+        $components = $array['components'] ?? null;
+        self::assertIsArray($components);
+
+        $schemas = $components['schemas'] ?? null;
+        self::assertIsArray($schemas);
+        self::assertArrayHasKey('User', $schemas);
+    }
+
     public function testToArrayStructureMatchesOpenApiSchema(): void
     {
         $spec = new OpenApiSpec('Test API', '0.1.0', []);

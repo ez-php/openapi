@@ -36,11 +36,18 @@ final class OpenApiGenerator
      * @param list<array{method: string, path: string, name: string|null, handler: array{0: class-string, 1: string}, middleware: array<int, class-string>, constraints: array<string, string>, csrfExempt: bool}> $routes
      * @param string $title   API title placed in the OpenAPI `info.title` field.
      * @param string $version API version placed in the OpenAPI `info.version` field.
+     * @param array<string, mixed> $components Reusable component objects supplied by the application,
+     *                                         e.g. `['schemas' => ['User' => [...]]]`. The generator does
+     *                                         not introspect data classes — emitting component schemas
+     *                                         remains the application's responsibility (see CLAUDE.md).
+     *                                         Supplying them here makes the `$ref` values produced by
+     *                                         `#[ApiResponse(schemaClass: ...)]` resolvable.
      */
     public function __construct(
         private readonly array $routes,
         private readonly string $title = 'API',
         private readonly string $version = '1.0.0',
+        private readonly array $components = [],
     ) {
     }
 
@@ -62,7 +69,7 @@ final class OpenApiGenerator
             $paths[$path][$method] = $operation;
         }
 
-        return new OpenApiSpec($this->title, $this->version, $paths);
+        return new OpenApiSpec($this->title, $this->version, $paths, $this->components);
     }
 
     /**

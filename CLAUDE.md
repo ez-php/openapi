@@ -26,16 +26,20 @@ docker compose exec app composer full
 ```
 
 Executes in order:
-1. `phpstan analyse` — static analysis, level 9, config: `phpstan.neon`
-2. `php-cs-fixer fix` — auto-fixes style (`@PSR12` + `@PHP83Migration` + strict rules)
+1. `sync_guidelines.php --check` — fails if any `CLAUDE.md` has drifted from this file
+2. `check_test_classes.php` — fails on a duplicate test class name (all packages share the `Tests\` namespace, so a collision is a fatal error in the aggregated run, not a test failure)
+3. `phpstan analyse` — static analysis, level 9, config: `phpstan.neon`
+4. `php-cs-fixer fix` — auto-fixes style (`@PSR12` + `@PHP83Migration` + strict rules)
    *(Note: `@PHP85Migration` does not exist yet in php-cs-fixer; `@PHP83Migration` is the highest available and is used intentionally even though the project targets PHP 8.5)*
-3. `phpunit` — all tests with coverage
+5. `phpunit` — all tests with coverage
 
 Individual commands when needed:
 ```
-composer analyse   # PHPStan only
-composer cs        # CS Fixer only
-composer test      # PHPUnit only
+composer analyse             # PHPStan only
+composer cs                  # CS Fixer only
+composer test                # PHPUnit only
+composer guidelines:check    # CLAUDE.md drift only
+composer test-classes:check  # duplicate test class names only
 ```
 
 **PHPStan:** never suppress with `@phpstan-ignore-line` — always fix the root cause.
@@ -119,7 +123,47 @@ Every module `CLAUDE.md` must follow this exact structure:
    - Testing approach and infrastructure requirements (MySQL, Redis, etc.)
    - What does **not** belong in this module
 
-### 3 — Docker scaffold
+**Do not edit part 1 by hand.** It is generated from `CODING_GUIDELINES.md` by
+`sync_guidelines.php` at the project root:
+
+```
+php sync_guidelines.php            # rewrite every out-of-sync CLAUDE.md
+php sync_guidelines.php --check    # report drift, exit 1 if any (CI / pre-commit)
+```
+
+Edit `CODING_GUIDELINES.md`, then run the script — it replaces everything before the
+`# Package:` / `# Directory:` / `# Project:` heading and preserves the hand-written
+section below it byte-for-byte. Editing a single copy only creates drift; before this
+script existed, all 40 copies had diverged.
+
+### 3 — Scaffolding a new module
+
+`make_module.php` at the project root writes the required-file set and the monorepo
+wiring in one step, wrapping `docker-init` for the Docker subset:
+
+```
+composer module:make <name> -- --description="..."
+php make_module.php <name> --description="..." --services=mysql,redis
+```
+
+`<name>` is the kebab-case package name; the namespace is derived as
+`EzPhp\<PascalCase>` unless `--namespace=` overrides it (`bignum` → `BigNum` and
+`opcache` → `OPCache` are existing exceptions the guess gets wrong).
+
+It writes `modules/<name>/` and registers the module in the four places the monorepo
+needs it — root `composer.json` (`autoload.psr-4`), `phpstan.neon`, `phpunit.xml`
+(test suite **and** coverage source), and `packages.sh` (alphabetical position).
+
+Two things stay manual on purpose:
+
+- **`CLAUDE.md` part 1** — only the `# Package:` section is generated. Run
+  `composer guidelines:sync` afterwards; baking a guidelines copy into the generator
+  would recreate the drift the sync script exists to prevent.
+- **The host-port table below** (`--services` only) — editing it marks all ~40
+  `CLAUDE.md` copies as drifted at once, so the next `composer full` would fail for
+  a brand-new module. The generator prints which ports to claim instead.
+
+### 4 — Docker scaffold
 
 Run from the new module root (requires `"ez-php/docker": "^1.0"` in `require-dev`):
 
@@ -129,35 +173,39 @@ vendor/bin/docker-init
 
 This copies `Dockerfile`, `docker-compose.yml`, `.env.example`, `start.sh`, and `docker/` into the module, replacing `{{MODULE_NAME}}` placeholders. Existing files are never overwritten.
 
-Pass `--services` to merge MySQL/Redis service definitions directly into `docker-compose.yml` and uncomment the matching sections in `.env.example`, instead of adapting them by hand afterward:
+Pass `--services` to merge MySQL/Redis/Meilisearch service definitions directly into `docker-compose.yml` and uncomment the matching sections in `.env.example`, instead of adapting them by hand afterward:
 
 ```
 vendor/bin/docker-init --services=mysql
 vendor/bin/docker-init --services=redis
+vendor/bin/docker-init --services=meilisearch
 vendor/bin/docker-init --services=mysql,redis
 ```
 
 After scaffolding:
 
-1. Adapt `docker-compose.yml` — add or remove services (MySQL, Redis) as needed
+1. Adapt `docker-compose.yml` — add or remove services (MySQL, Redis, Meilisearch) as needed
 2. Adapt `.env.example` — fill in connection defaults matching the services above
 3. Assign a unique host port for each exposed service (see table below)
 
 **Allocated host ports:**
 
-| Package | `DB_HOST_PORT` (MySQL) | `REDIS_PORT` |
-|---|---|---|
-| root (`ez-php-project`) | 3306 | 6379 |
-| `ez-php/framework` | 3307 | — |
-| `ez-php/orm` | 3309 | — |
-| `ez-php/cache` | — | 6380 |
-| `ez-php/queue` | 3310 | 6381 |
-| `ez-php/rate-limiter` | — | 6382 |
-| **next free** | **3311** | **6383** |
+| Package | `DB_HOST_PORT` (MySQL) | `REDIS_PORT` | `MEILISEARCH_PORT` |
+|---|---|---|---|
+| root (`ez-php-project`) | 3306 | 6379 | 7700 |
+| `ez-php/framework` | 3307 | — | — |
+| `ez-php/orm` | 3309 | — | — |
+| `ez-php/cache` | — | 6380 | — |
+| `ez-php/queue` | 3310 | 6381 | — |
+| `ez-php/rate-limiter` | — | 6382 | — |
+| `ez-php/search` | — | — | 7701 |
+| **next free** | **3311** | **6383** | **7702** |
 
 Only set a port for services the module actually uses. Modules without external services need no port config.
 
-### 4 — Monorepo scripts
+> The `MEILISEARCH_PORT` column is the **host** port. Inside a Compose network the service is always reachable at `http://meilisearch:7700` regardless of the host mapping — only publish-side ports need to be unique.
+
+### 5 — Monorepo scripts
 
 `packages.sh` at the project root is the **central package registry**. Both `push_all.sh` and `update_all.sh` source it — the package list lives in exactly one place.
 
@@ -208,7 +256,7 @@ PHP 8 Attribute targeting methods. Not repeatable — only one per method. Carri
 
 ### ApiResponse (`src/Attributes/ApiResponse.php`)
 
-Repeatable PHP 8 Attribute (`IS_REPEATABLE | TARGET_METHOD`). The `$status` integer is the only required field. `$schemaClass` is an optional FQCN — when present, the generator derives the short class name (via `basename(str_replace(...))`) and emits a `$ref: '#/components/schemas/ShortName'` entry in the response content. The component schema itself is not generated — that is the application's responsibility.
+Repeatable PHP 8 Attribute (`IS_REPEATABLE | TARGET_METHOD`). The `$status` integer is the only required field. `$schemaClass` is an optional FQCN — when present, the generator derives the short class name (via `basename(str_replace(...))`) and emits a `$ref: '#/components/schemas/ShortName'` entry in the response content. The component schema itself is not generated — that is the application's responsibility, fulfilled by supplying `openapi.components` (see `OpenApiServiceProvider`). Emitting a `$ref` without a matching component leaves an unresolvable reference in the spec.
 
 ---
 
@@ -220,7 +268,7 @@ Repeatable PHP 8 Attribute (`IS_REPEATABLE | TARGET_METHOD`). `$in` defaults to 
 
 ### OpenApiSpec (`src/OpenApiSpec.php`)
 
-Immutable value object. Constructed by `OpenApiGenerator::generate()`. `toArray()` returns a PHP array conforming to the OpenAPI 3.0.0 object structure: `openapi`, `info.title`, `info.version`, `paths`. The paths map keys are raw route patterns (e.g. `/users/{id}`) — OpenAPI uses the same `{param}` placeholder syntax as the framework router.
+Immutable value object. Constructed by `OpenApiGenerator::generate()`. `toArray()` returns a PHP array conforming to the OpenAPI 3.0.0 object structure: `openapi`, `info.title`, `info.version`, `paths`, and — only when a non-empty `$components` array was supplied — `components`. The paths map keys are raw route patterns (e.g. `/users/{id}`) — OpenAPI uses the same `{param}` placeholder syntax as the framework router.
 
 ---
 
@@ -240,7 +288,7 @@ Invokable controller. Calls `$this->generator->generate()` on each request so th
 
 ### OpenApiServiceProvider (`src/OpenApiServiceProvider.php`)
 
-`register()` binds `OpenApiGenerator` lazily. The closure captures the container reference and calls `$router->toCache()` when the generator is first resolved (at request time, after all routes are registered). Config values `app.name` and `app.version` are used as the spec title and version. Both the router and config lookups are wrapped in `try/catch` — the provider degrades gracefully in CLI and test contexts.
+`register()` binds `OpenApiGenerator` lazily. The closure captures the container reference and calls `$router->toCache()` when the generator is first resolved (at request time, after all routes are registered). Config values `app.name` and `app.version` are used as the spec title and version, and `openapi.components` (default `[]`) supplies reusable component objects such as `schemas` and `securitySchemes`. Non-array `openapi.components` values fall back to `[]`. Both the router and config lookups are wrapped in `try/catch` — the provider degrades gracefully in CLI and test contexts.
 
 `boot()` registers `GET /openapi.json` (configurable via `openapi.endpoint`) using `[OpenApiController::class, '__invoke']` so the route appears in the spec itself (via `toCache()`). Also wrapped in `try/catch` for CLI safety.
 
@@ -250,7 +298,8 @@ Invokable controller. Calls `$this->generator->generate()` on each request so th
 
 - **Generator accepts routes array, not Router.** Passing the `Router::toCache()` result at construction avoids a circular dependency: the service provider registers a route in `boot()`, and if the generator held a live Router reference it might produce stale or missing route data at registration time. By accepting the array as a constructor parameter, the generator is fully testable without a container.
 - **Lazy binding captures routes at request time.** The `register()` closure calls `$router->toCache()` when `OpenApiGenerator` is resolved from the container — which happens when the `GET /openapi.json` route is dispatched. At that point all routes (including the spec route itself) are already registered.
-- **No component schema generation.** `#[ApiResponse(200, UserSchema::class)]` produces a `$ref` pointing at `#/components/schemas/UserSchema`. The actual schema definition under `components.schemas` is the application's responsibility. Adding automatic schema introspection would require deep knowledge of the application's data model and is out of scope for this module.
+- **No component schema generation, but a seam to supply them.** `#[ApiResponse(200, UserSchema::class)]` produces a `$ref` pointing at `#/components/schemas/UserSchema`. The actual schema definition under `components.schemas` is the application's responsibility — adding automatic schema introspection would require deep knowledge of the application's data model and is out of scope. The module does provide the plumbing to fulfil that responsibility: `OpenApiSpec` and `OpenApiGenerator` accept an optional `$components` array, and `OpenApiServiceProvider` reads it from `openapi.components`. Without this the emitted `$ref` values pointed at a `components` section the module never rendered and the application had no way to add, so every generated spec carried unresolvable references.
+- **`components` is omitted when empty.** An empty `components` object is valid OpenAPI but carries no information, so `toArray()` emits the key only when components were supplied. The PHPStan return shape marks it optional (`components?:`), which means callers must narrow before indexing.
 - **Auto-detected path parameters use `type: 'string'`.** The router stores path params as `{name}` placeholders; the actual type is not encoded in the route pattern. Auto-detection therefore defaults to `string`. Accurate types require an explicit `#[ApiParam('name', 'integer', 'path')]` declaration — this is intentional; the attribute is the documentation source of truth.
 - **`ReflectionException` produces a bare operation.** When a handler method does not exist (e.g. a stale cache entry), the generator degrades gracefully rather than aborting the entire spec build. This is consistent with the "never fail a read request" principle for documentation endpoints.
 - **`basename(str_replace(...))` for schema class short name.** PHP has no stdlib `class_basename()`. Using `basename(str_replace('\\', '/', $fqcn))` is idiomatic and avoids an unnecessary `ReflectionClass` instantiation (which would fail for non-existent classes). It produces the correct short name for any valid FQCN.
@@ -273,7 +322,7 @@ No external infrastructure required — all tests run in-process.
 
 ## What does not belong in this module
 
-- **Component schema generation (`#/components/schemas`)** — inspecting data classes or DTOs to emit JSON Schema is a separate concern; belongs in an application-layer generator or a dedicated `ez-php/json-schema` module.
+- **Component schema *generation* (`#/components/schemas`)** — inspecting data classes or DTOs to emit JSON Schema is a separate concern; belongs in an application-layer generator or a dedicated `ez-php/json-schema` module. Note the distinction: the module *carries* components the application supplies (via `openapi.components` / the `$components` constructor argument) but never derives them from code.
 - **Authentication on the `/openapi.json` endpoint** — apply `AuthMiddleware` or `ThrottleMiddleware` to the route in the application's service provider.
 - **Swagger UI / ReDoc rendering** — serving the HTML UI requires shipping static assets; belongs in the application layer or a separate `ez-php/swagger-ui` module.
 - **YAML output** — `toArray()` produces a PHP array; `json_encode()` is used by the controller. YAML output would require a third-party library (e.g. `symfony/yaml`) and is out of scope.

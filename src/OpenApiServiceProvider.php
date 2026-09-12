@@ -22,7 +22,10 @@ use EzPhp\Routing\Router;
  *
  *   app.name     — used as the OpenAPI `info.title` (default: 'API')
  *   app.version  — used as the OpenAPI `info.version` (default: '1.0.0')
- *   openapi.endpoint — URI for the spec endpoint (default: '/openapi.json')
+ *   openapi.endpoint   — URI for the spec endpoint (default: '/openapi.json')
+ *   openapi.components — reusable component objects merged into the spec, e.g.
+ *                        ['schemas' => ['User' => ['type' => 'object', ...]]].
+ *                        Required for `#[ApiResponse(schemaClass: ...)]` refs to resolve.
  */
 final class OpenApiServiceProvider extends ServiceProvider
 {
@@ -39,6 +42,7 @@ final class OpenApiServiceProvider extends ServiceProvider
             $routes = [];
             $title = 'API';
             $version = '1.0.0';
+            $components = [];
 
             try {
                 $router = $app->make(Router::class);
@@ -53,11 +57,13 @@ final class OpenApiServiceProvider extends ServiceProvider
                 $title = is_string($raw) ? $raw : 'API';
                 $raw = $config->get('app.version', '1.0.0');
                 $version = is_string($raw) ? $raw : '1.0.0';
+                $raw = $config->get('openapi.components', []);
+                $components = is_array($raw) ? $raw : [];
             } catch (\Throwable) {
                 // Config not bound — use defaults.
             }
 
-            return new OpenApiGenerator($routes, $title, $version);
+            return new OpenApiGenerator($routes, $title, $version, $components);
         });
     }
 
