@@ -81,9 +81,10 @@ Repeatable — multiple parameters per method.
 | `app.name`         | `'API'`          | Spec `info.title`                              |
 | `app.version`      | `'1.0.0'`        | Spec `info.version`                            |
 | `openapi.endpoint` | `'/openapi.json'`| URI for the generated spec                     |
+| `openapi.components` | `[]`           | Reusable component objects merged into the spec's `components` key, e.g. `['schemas' => ['User' => ['type' => 'object', ...]]]`. Required for `#[ApiResponse(schemaClass: ...)]` refs to resolve. |
 
 ## Notes
 
 - Only `[Controller::class, 'method']` handler routes are reflected for attributes. Closure-based routes appear in the spec without attribute data.
 - Path parameters (`{id}`) are auto-detected from route patterns and added as `in: 'path', required: true, type: 'string'` when not explicitly declared via `#[ApiParam]`.
-- Component schemas (`#/components/schemas/...`) referenced by `$schemaClass` must be registered separately — this module generates the `$ref` but not the schema definition.
+- Component schemas (`#/components/schemas/...`) referenced by `$schemaClass` resolve against whatever is configured in `openapi.components` — this module emits the `$ref` and the `components` key it points at, but does not generate schema definitions from code; populate `openapi.components` with the actual schema objects.
