@@ -261,7 +261,7 @@ src/
   OpenApiSpec.php         — Immutable value object: title, version, paths; toArray() produces OpenAPI 3.0.0 array
   OpenApiGenerator.php    — Reads Router::toCache() routes, reflects attributes, builds OpenApiSpec
   OpenApiController.php   — Invokable controller: generates spec, returns JSON response at GET /openapi.json
-  OpenApiServiceProvider.php — Binds generator lazily, registers GET /openapi.json route
+  OpenApiServiceProvider.php — Binds generator lazily, registers GET /openapi.json route; optionally auto-populates components.schemas via ez-php/json-schema's SchemaGenerator (soft dependency — require-dev only)
 
 tests/
   TestCase.php                     — Base PHPUnit test case
@@ -272,7 +272,7 @@ tests/
   OpenApiSpecTest.php              — toArray() format, info block, paths passthrough
   OpenApiGeneratorTest.php         — generate() with no routes, attributes, auto path params, reflection failure
   OpenApiControllerTest.php        — HTTP 200, JSON content-type, body structure
-  OpenApiServiceProviderTest.php   — Container binding, GET /openapi.json route registration, graceful degradation
+  OpenApiServiceProviderTest.php   — Container binding, GET /openapi.json route registration, graceful degradation, openapi.schema_classes auto-population + manual-component precedence
 ```
 
 ---
@@ -321,6 +321,8 @@ Invokable controller. Calls `$this->generator->generate()` on each request so th
 
 `register()` binds `OpenApiGenerator` lazily. The closure captures the container reference and calls `$router->toCache()` when the generator is first resolved (at request time, after all routes are registered). Config values `app.name` and `app.version` are used as the spec title and version, and `openapi.components` (default `[]`) supplies reusable component objects such as `schemas` and `securitySchemes`. Non-array `openapi.components` values fall back to `[]`. Both the router and config lookups are wrapped in `try/catch` — the provider degrades gracefully in CLI and test contexts.
 
+When `openapi.schema_classes` (a `list<class-string>`) is non-empty, `mergeGeneratedSchemas()` runs each class through `ez-php/json-schema`'s `SchemaGenerator::generate()` and merges the results into `components.schemas`, keyed by short class name (`strrpos`/`substr` on the FQCN — same short-name derivation `ApiResponse` already uses for `$ref` values, so the two stay consistent by construction). Entries already present under `openapi.components['schemas']` win over the generated ones — `[...$generated, ...$existingSchemas]` puts manual entries last, so a manual override for the same key replaces the generated one rather than the other way around. This is opt-in: the config key defaults to `[]`, and generation is skipped entirely (no `SchemaGenerator` instantiation, no `ez-php/json-schema` autoload) when it's empty.
+
 `boot()` registers `GET /openapi.json` (configurable via `openapi.endpoint`) using `[OpenApiController::class, '__invoke']` so the route appears in the spec itself (via `toCache()`). Also wrapped in `try/catch` for CLI safety.
 
 ---
@@ -336,6 +338,8 @@ Invokable controller. Calls `$this->generator->generate()` on each request so th
 - **`basename(str_replace(...))` for schema class short name.** PHP has no stdlib `class_basename()`. Using `basename(str_replace('\\', '/', $fqcn))` is idiomatic and avoids an unnecessary `ReflectionClass` instantiation (which would fail for non-existent classes). It produces the correct short name for any valid FQCN.
 - **`json_encode` fallback to `'{}'`.** `json_encode` returns `false` only for unencodable input (circular references, `INF`/`NaN`). The spec array contains only strings, booleans, and arrays — failure is practically impossible. The fallback is a defensive measure, not an expected code path.
 - **Depends on `ez-php/framework`.** The service provider uses `Router` from `ez-php/framework` for route registration and `toCache()` introspection. This is intentional: the module exists specifically to document the framework's HTTP routes. Direct use of `OpenApiGenerator` (without the service provider) does not require the framework.
+- **`ez-php/json-schema` is a soft dependency, `require-dev` only.** `openapi.schema_classes` support uses `SchemaGenerator`, but `composer.json`'s `require` block stays limited to `ez-php/contracts`/`ez-php/http`/`ez-php/framework` — same reasoning as `ez-php/orm`'s `LoggingDatabase` and `ez-php/metrics`' `HealthMetricsListener`: a hard dependency would force `ez-php/json-schema` on every application that installs `ez-php/openapi`, even ones that supply `openapi.components` by hand (or don't use components at all). PSR-4 only resolves the `SchemaGenerator` import when `mergeGeneratedSchemas()` actually runs, which itself is gated on `openapi.schema_classes` being non-empty.
+- **Schema *generation* still doesn't live in this module.** `mergeGeneratedSchemas()` is orchestration, not generation — it calls `ez-php/json-schema`'s `SchemaGenerator`, the same class an application could call directly. This preserves the boundary already documented below ("Component schema generation... belongs in a dedicated `ez-php/json-schema` module"); the service provider just wires the two together as an opt-in convenience instead of leaving it to every application to write the same five lines.
 
 ---
 
@@ -353,7 +357,7 @@ No external infrastructure required — all tests run in-process.
 
 ## What does not belong in this module
 
-- **Component schema *generation* (`#/components/schemas`)** — inspecting data classes or DTOs to emit JSON Schema is a separate concern; belongs in an application-layer generator or a dedicated `ez-php/json-schema` module. Note the distinction: the module *carries* components the application supplies (via `openapi.components` / the `$components` constructor argument) but never derives them from code.
+- **Component schema *generation* (`#/components/schemas`)** — inspecting data classes or DTOs to emit JSON Schema is `ez-php/json-schema`'s job (`SchemaGenerator`), not this module's. `openapi.schema_classes` is a thin, opt-in orchestration seam that calls that generator and merges its output — the introspection logic itself is not duplicated here. Note the distinction: the module *carries* components the application supplies (via `openapi.components`, `openapi.schema_classes`, or the `$components` constructor argument) but never derives them from code on its own.
 - **Authentication on the `/openapi.json` endpoint** — apply `AuthMiddleware` or `ThrottleMiddleware` to the route in the application's service provider.
 - **Swagger UI / ReDoc rendering** — serving the HTML UI requires shipping static assets; belongs in the application layer or a separate `ez-php/swagger-ui` module.
 - **YAML output** — `toArray()` produces a PHP array; `json_encode()` is used by the controller. YAML output would require a third-party library (e.g. `symfony/yaml`) and is out of scope.

@@ -82,9 +82,28 @@ Repeatable — multiple parameters per method.
 | `app.version`      | `'1.0.0'`        | Spec `info.version`                            |
 | `openapi.endpoint` | `'/openapi.json'`| URI for the generated spec                     |
 | `openapi.components` | `[]`           | Reusable component objects merged into the spec's `components` key, e.g. `['schemas' => ['User' => ['type' => 'object', ...]]]`. Required for `#[ApiResponse(schemaClass: ...)]` refs to resolve. |
+| `openapi.schema_classes` | `[]`       | `list<class-string>` auto-converted into `components.schemas` via `ez-php/json-schema`'s `SchemaGenerator`, keyed by short class name. Requires `ez-php/json-schema` (a soft dependency — install it separately). |
+
+### Auto-generating component schemas
+
+Instead of hand-writing every schema under `openapi.components`, point `openapi.schema_classes`
+at your DTOs and let `ez-php/json-schema` derive them from typed properties:
+
+```php
+// config/openapi.php
+return [
+    'schema_classes' => [App\Dto\User::class, App\Dto\Post::class],
+];
+```
+
+Each class is generated under `components.schemas` keyed by its short class name (`User`,
+`Post`) — the same short-name convention `#[ApiResponse(schemaClass: ...)]`'s `$ref` already
+uses, so the two line up automatically. A schema manually supplied under
+`openapi.components['schemas']` for the same key always wins over the generated one, so you
+can override individual classes without losing auto-generation for the rest.
 
 ## Notes
 
 - Only `[Controller::class, 'method']` handler routes are reflected for attributes. Closure-based routes appear in the spec without attribute data.
 - Path parameters (`{id}`) are auto-detected from route patterns and added as `in: 'path', required: true, type: 'string'` when not explicitly declared via `#[ApiParam]`.
-- Component schemas (`#/components/schemas/...`) referenced by `$schemaClass` resolve against whatever is configured in `openapi.components` — this module emits the `$ref` and the `components` key it points at, but does not generate schema definitions from code; populate `openapi.components` with the actual schema objects.
+- Component schemas (`#/components/schemas/...`) referenced by `$schemaClass` resolve against whatever is configured in `openapi.components` (hand-written) or `openapi.schema_classes` (auto-generated) — this module emits the `$ref` and the `components` key it points at, but does not itself introspect your code; population is either manual or delegated to `ez-php/json-schema`.

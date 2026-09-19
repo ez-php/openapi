@@ -7,6 +7,7 @@ namespace EzPhp\OpenApi;
 use EzPhp\Contracts\ConfigInterface;
 use EzPhp\Contracts\ContainerInterface;
 use EzPhp\Contracts\ServiceProvider;
+use EzPhp\JsonSchema\SchemaGenerator;
 use EzPhp\Routing\Router;
 
 /**
@@ -26,6 +27,11 @@ use EzPhp\Routing\Router;
  *   openapi.components — reusable component objects merged into the spec, e.g.
  *                        ['schemas' => ['User' => ['type' => 'object', ...]]].
  *                        Required for `#[ApiResponse(schemaClass: ...)]` refs to resolve.
+ *   openapi.schema_classes — list<class-string> auto-converted into `components.schemas`
+ *                        via ez-php/json-schema's SchemaGenerator, keyed by short class name.
+ *                        Optional (soft dependency on ez-php/json-schema — require-dev only).
+ *                        An entry in `openapi.components['schemas']` with the same key wins
+ *                        over the generated one.
  */
 final class OpenApiServiceProvider extends ServiceProvider
 {
@@ -59,6 +65,13 @@ final class OpenApiServiceProvider extends ServiceProvider
                 $version = is_string($raw) ? $raw : '1.0.0';
                 $raw = $config->get('openapi.components', []);
                 $components = is_array($raw) ? $raw : [];
+
+                $rawSchemaClasses = $config->get('openapi.schema_classes', []);
+                $schemaClasses = is_array($rawSchemaClasses) ? array_values($rawSchemaClasses) : [];
+
+                if ($schemaClasses !== []) {
+                    $components = $this->mergeGeneratedSchemas($components, $schemaClasses);
+                }
             } catch (\Throwable) {
                 // Config not bound — use defaults.
             }
@@ -92,5 +105,38 @@ final class OpenApiServiceProvider extends ServiceProvider
         } catch (\Throwable) {
             // Router not available — route registration skipped.
         }
+    }
+
+    /**
+     * Merge SchemaGenerator-derived schemas for the given classes into
+     * $components['schemas'], keyed by short class name. Any schema already
+     * present under `openapi.components['schemas']` wins over the generated
+     * one — the application's manual customisation is never overwritten.
+     *
+     * @param array<string, mixed> $components
+     * @param list<mixed>          $schemaClasses
+     *
+     * @return array<string, mixed>
+     */
+    private function mergeGeneratedSchemas(array $components, array $schemaClasses): array
+    {
+        $generator = new SchemaGenerator();
+        $generated = [];
+
+        foreach ($schemaClasses as $class) {
+            if (!is_string($class) || !class_exists($class)) {
+                continue;
+            }
+
+            $lastSlash = strrpos($class, '\\');
+            $shortName = $lastSlash === false ? $class : substr($class, $lastSlash + 1);
+            $generated[$shortName] = $generator->generate($class);
+        }
+
+        /** @var array<string, mixed> $existingSchemas */
+        $existingSchemas = is_array($components['schemas'] ?? null) ? $components['schemas'] : [];
+        $components['schemas'] = [...$generated, ...$existingSchemas];
+
+        return $components;
     }
 }

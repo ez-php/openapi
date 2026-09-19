@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests;
 
+use EzPhp\Contracts\ConfigInterface;
 use EzPhp\Contracts\ContainerInterface;
 use EzPhp\OpenApi\OpenApiController;
 use EzPhp\OpenApi\OpenApiGenerator;
@@ -97,9 +98,91 @@ final class OpenApiServiceProviderTest extends TestCase
         self::assertSame('API', $spec['info']['title']);
         self::assertSame('1.0.0', $spec['info']['version']);
     }
+
+    public function testRegisterAutoPopulatesComponentSchemasFromConfiguredClasses(): void
+    {
+        $container = new ServiceProviderFakeContainer();
+        $container->instance(ConfigInterface::class, new OpenApiFakeConfig([
+            'openapi.schema_classes' => [OpenApiFakeSchemaClass::class],
+        ]));
+
+        $provider = new OpenApiServiceProvider($container);
+        $provider->register();
+
+        $generator = $container->make(OpenApiGenerator::class);
+        $spec = $generator->generate()->toArray();
+
+        /** @var array<string, mixed> $components */
+        $components = $spec['components'] ?? [];
+        self::assertArrayHasKey('schemas', $components);
+        $schemas = $components['schemas'];
+        self::assertIsArray($schemas);
+        self::assertArrayHasKey('OpenApiFakeSchemaClass', $schemas);
+        $fakeSchema = $schemas['OpenApiFakeSchemaClass'];
+        self::assertIsArray($fakeSchema);
+        self::assertSame('object', $fakeSchema['type']);
+    }
+
+    public function testManuallyConfiguredComponentsTakePrecedenceOverGeneratedOnes(): void
+    {
+        $container = new ServiceProviderFakeContainer();
+        $container->instance(ConfigInterface::class, new OpenApiFakeConfig([
+            'openapi.schema_classes' => [OpenApiFakeSchemaClass::class],
+            'openapi.components' => ['schemas' => ['OpenApiFakeSchemaClass' => ['type' => 'string']]],
+        ]));
+
+        $provider = new OpenApiServiceProvider($container);
+        $provider->register();
+
+        $generator = $container->make(OpenApiGenerator::class);
+        $spec = $generator->generate()->toArray();
+
+        /** @var array<string, mixed> $components */
+        $components = $spec['components'] ?? [];
+        self::assertIsArray($components['schemas'] ?? null);
+        /** @var array<string, mixed> $schemas */
+        $schemas = $components['schemas'];
+        $fakeSchema = $schemas['OpenApiFakeSchemaClass'];
+        self::assertIsArray($fakeSchema);
+        self::assertSame('string', $fakeSchema['type']);
+    }
+
+    public function testNoComponentsKeyWhenNoSchemaClassesConfigured(): void
+    {
+        $this->provider->register();
+
+        $generator = $this->container->make(OpenApiGenerator::class);
+        $spec = $generator->generate()->toArray();
+
+        self::assertArrayNotHasKey('components', $spec);
+    }
 }
 
 // ─── Fixture ─────────────────────────────────────────────────────────────────
+
+/**
+ * Trivial typed-property class used to verify SchemaGenerator integration.
+ */
+final class OpenApiFakeSchemaClass
+{
+    public string $name = '';
+}
+
+/**
+ * Minimal ConfigInterface stub returning fixed values from an array map.
+ */
+final class OpenApiFakeConfig implements ConfigInterface
+{
+    /** @param array<string, mixed> $values */
+    public function __construct(private readonly array $values)
+    {
+    }
+
+    public function get(string $key, mixed $default = null): mixed
+    {
+        return $this->values[$key] ?? $default;
+    }
+}
 
 /**
  * Minimal ContainerInterface implementation for service provider tests.
