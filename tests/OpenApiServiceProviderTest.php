@@ -6,6 +6,7 @@ namespace Tests;
 
 use EzPhp\Contracts\ConfigInterface;
 use EzPhp\Contracts\ContainerInterface;
+use EzPhp\Contracts\RouterInterface;
 use EzPhp\OpenApi\OpenApiController;
 use EzPhp\OpenApi\OpenApiGenerator;
 use EzPhp\OpenApi\OpenApiServiceProvider;
@@ -30,7 +31,7 @@ final class OpenApiServiceProviderTest extends TestCase
     {
         $this->container = new ServiceProviderFakeContainer();
         $this->router = new Router($this->container);
-        $this->container->instance(Router::class, $this->router);
+        $this->container->instance(RouterInterface::class, $this->router);
         $this->container->instance(ContainerInterface::class, $this->container);
 
         $this->provider = new OpenApiServiceProvider($this->container);

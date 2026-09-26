@@ -6,9 +6,9 @@ namespace EzPhp\OpenApi;
 
 use EzPhp\Contracts\ConfigInterface;
 use EzPhp\Contracts\ContainerInterface;
+use EzPhp\Contracts\RouterInterface;
 use EzPhp\Contracts\ServiceProvider;
 use EzPhp\JsonSchema\SchemaGenerator;
-use EzPhp\Routing\Router;
 
 /**
  * Service provider for the ez-php/openapi module.
@@ -51,7 +51,7 @@ final class OpenApiServiceProvider extends ServiceProvider
             $components = [];
 
             try {
-                $router = $app->make(Router::class);
+                $router = $app->make(RouterInterface::class);
                 $routes = $router->toCache();
             } catch (\Throwable) {
                 // Router not available in minimal / CLI contexts.
@@ -89,7 +89,7 @@ final class OpenApiServiceProvider extends ServiceProvider
     public function boot(): void
     {
         try {
-            $router = $this->app->make(Router::class);
+            $router = $this->app->make(RouterInterface::class);
 
             $endpoint = '/openapi.json';
 
