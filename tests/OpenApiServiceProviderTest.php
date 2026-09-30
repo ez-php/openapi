@@ -11,6 +11,7 @@ use EzPhp\OpenApi\OpenApiController;
 use EzPhp\OpenApi\OpenApiGenerator;
 use EzPhp\OpenApi\OpenApiServiceProvider;
 use EzPhp\OpenApi\OpenApiSpec;
+use EzPhp\OpenApi\SchemaDialect;
 use EzPhp\Routing\Router;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\UsesClass;
@@ -19,6 +20,7 @@ use PHPUnit\Framework\Attributes\UsesClass;
 #[UsesClass(OpenApiGenerator::class)]
 #[UsesClass(OpenApiController::class)]
 #[UsesClass(OpenApiSpec::class)]
+#[UsesClass(SchemaDialect::class)]
 final class OpenApiServiceProviderTest extends TestCase
 {
     private ServiceProviderFakeContainer $container;

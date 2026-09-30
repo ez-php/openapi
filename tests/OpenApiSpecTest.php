@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace Tests;
 
 use EzPhp\OpenApi\OpenApiSpec;
+use EzPhp\OpenApi\SchemaDialect;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\UsesClass;
 
 #[CoversClass(OpenApiSpec::class)]
+#[UsesClass(SchemaDialect::class)]
 final class OpenApiSpecTest extends TestCase
 {
     public function testToArrayContainsOpenApiVersion(): void
