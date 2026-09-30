@@ -28,10 +28,11 @@ docker compose exec app composer full
 Executes in order:
 1. `sync_guidelines.php --check` — fails if any `CLAUDE.md` has drifted from this file
 2. `check_test_classes.php` — fails on a duplicate test class name (all packages share the `Tests\` namespace, so a collision is a fatal error in the aggregated run, not a test failure)
-3. `phpstan analyse` — static analysis, level 9, config: `phpstan.neon`
-4. `php-cs-fixer fix` — auto-fixes style (`@PSR12` + `@PHP83Migration` + strict rules)
+3. `check_module_deps.php` — fails when a package's code imports an ez-php package its `composer.json` does not declare (module `src`: `require`/`suggest`; tests: `require`/`require-dev` and their dependencies), or requires one it never uses
+4. `phpstan analyse` — static analysis, level 9, config: `phpstan.neon`
+5. `php-cs-fixer fix` — auto-fixes style (`@PSR12` + `@PHP83Migration` + strict rules)
    *(Note: `@PHP85Migration` does not exist yet in php-cs-fixer; `@PHP83Migration` is the highest available and is used intentionally even though the project targets PHP 8.5)*
-5. `phpunit` — all tests with coverage
+6. `phpunit` — all tests with coverage
 
 Individual commands when needed:
 ```
@@ -40,6 +41,7 @@ composer cs                  # CS Fixer only
 composer test                # PHPUnit only
 composer guidelines:check    # CLAUDE.md drift only
 composer test-classes:check  # duplicate test class names only
+composer module-deps:check   # undeclared / unused ez-php package dependencies only
 ```
 
 **PHPStan:** never suppress with `@phpstan-ignore-line` — always fix the root cause.
@@ -198,20 +200,22 @@ vendor/bin/docker-init
 
 This copies `Dockerfile`, `docker-compose.yml`, `.env.example`, `start.sh`, and `docker/` into the module, replacing `{{MODULE_NAME}}` placeholders. Existing files are never overwritten.
 
-Pass `--services` to merge MySQL/Redis/Meilisearch service definitions directly into `docker-compose.yml` and uncomment the matching sections in `.env.example`, instead of adapting them by hand afterward:
+Pass `--services` to merge MySQL/Redis/Meilisearch/Memcached/Mailpit service definitions directly into `docker-compose.yml` and uncomment the matching sections in `.env.example`, instead of adapting them by hand afterward:
 
 ```
 vendor/bin/docker-init --services=mysql
 vendor/bin/docker-init --services=redis
 vendor/bin/docker-init --services=meilisearch
 vendor/bin/docker-init --services=mysql,redis
+vendor/bin/docker-init --services=memcached,mailpit
 ```
 
-Pass `--extensions` to merge PHP extension install blocks (apt packages plus `docker-php-ext-install`/`pecl` lines) directly into `docker/app/Dockerfile`, instead of hand-editing it afterward — supported extensions: `bcmath`, `gmp`, `gd`, `imagick`:
+Pass `--extensions` to merge PHP extension install blocks (apt packages plus `docker-php-ext-install`/`pecl` lines) directly into `docker/app/Dockerfile`, instead of hand-editing it afterward — supported extensions: `bcmath`, `gmp`, `gd`, `imagick`, `memcached`, `apcu` (with `apc.enable_cli=1`):
 
 ```
 vendor/bin/docker-init --extensions=gmp,bcmath
 vendor/bin/docker-init --extensions=gd,imagick
+vendor/bin/docker-init --extensions=memcached,apcu
 ```
 
 When run from a module directory inside this monorepo, any requested extension not already present is also merged into the shared root `docker/app/Dockerfile` — the container `composer full` at the root actually runs against, distinct from the module's own standalone image.
@@ -259,7 +263,7 @@ When adding a new module, add `"$ROOT/modules/<name>"` to the `PACKAGES` array i
 
 # Package: ez-php/openapi
 
-OpenAPI 3.0.0 spec generator for ez-php. Uses PHP 8.x attributes placed directly on controller methods to describe operations, parameters, and responses. `OpenApiGenerator::generate()` reads `Router::toCache()` and reflects the declared attributes to build an `OpenApiSpec` value object. `OpenApiServiceProvider` binds the generator and registers `GET /openapi.json`. No code-generation magic — attributes are explicit and optional; routes without them still appear in the spec.
+OpenAPI 3.0.0 / 3.1.0 spec generator for ez-php. Uses PHP 8.x attributes placed directly on controller methods to describe operations, parameters, and responses. `OpenApiGenerator::generate()` reads `Router::toCache()` and reflects the declared attributes to build an `OpenApiSpec` value object. `OpenApiServiceProvider` binds the generator and registers `GET /openapi.json`. No code-generation magic — attributes are explicit and optional; routes without them still appear in the spec.
 
 ---
 
@@ -271,7 +275,8 @@ src/
     ApiOperation.php      — #[ApiOperation(summary, description, tags)] — marks a method as an API operation
     ApiResponse.php       — #[ApiResponse(status, description, schemaClass)] — repeatable; documents a response code
     ApiParam.php          — #[ApiParam(name, type, in, required, description)] — repeatable; documents a parameter
-  OpenApiSpec.php         — Immutable value object: title, version, paths; toArray() produces OpenAPI 3.0.0 array
+  OpenApiSpec.php         — Immutable value object: title, version, paths, components, spec version; toArray() produces an OpenAPI 3.0.0 or 3.1.0 array
+  SchemaDialect.php       — @internal: JSON Schema 2020-12 → OpenAPI 3.0 Schema Object (nullable, example, enum for const, …)
   OpenApiGenerator.php    — Reads Router::toCache() routes, reflects attributes, builds OpenApiSpec
   OpenApiController.php   — Invokable controller: generates spec, returns JSON response at GET /openapi.json
   OpenApiServiceProvider.php — Binds generator lazily, registers GET /openapi.json route; optionally auto-populates components.schemas via ez-php/json-schema's SchemaGenerator (soft dependency — require-dev only)
@@ -285,6 +290,7 @@ tests/
   OpenApiSpecTest.php              — toArray() format, info block, paths passthrough
   OpenApiGeneratorTest.php         — generate() with no routes, attributes, auto path params, reflection failure
   OpenApiControllerTest.php        — HTTP 200, JSON content-type, body structure
+  OpenApiVersionTest.php           — 3.1 pass-through, 3.0 dialect conversion, invalid version, openapi.version + recursive schema_classes
   OpenApiServiceProviderTest.php   — Container binding, GET /openapi.json route registration, graceful degradation, openapi.schema_classes auto-population + manual-component precedence
 ```
 
@@ -334,7 +340,7 @@ Invokable controller. Calls `$this->generator->generate()` on each request so th
 
 `register()` binds `OpenApiGenerator` lazily. The closure captures the container reference and calls `$router->toCache()` when the generator is first resolved (at request time, after all routes are registered). Config values `app.name` and `app.version` are used as the spec title and version, and `openapi.components` (default `[]`) supplies reusable component objects such as `schemas` and `securitySchemes`. Non-array `openapi.components` values fall back to `[]`. Both the router and config lookups are wrapped in `try/catch` — the provider degrades gracefully in CLI and test contexts.
 
-When `openapi.schema_classes` (a `list<class-string>`) is non-empty, `mergeGeneratedSchemas()` runs each class through `ez-php/json-schema`'s `SchemaGenerator::generate()` and merges the results into `components.schemas`, keyed by short class name (`strrpos`/`substr` on the FQCN — same short-name derivation `ApiResponse` already uses for `$ref` values, so the two stay consistent by construction). Entries already present under `openapi.components['schemas']` win over the generated ones — `[...$generated, ...$existingSchemas]` puts manual entries last, so a manual override for the same key replaces the generated one rather than the other way around. This is opt-in: the config key defaults to `[]`, and generation is skipped entirely (no `SchemaGenerator` instantiation, no `ez-php/json-schema` autoload) when it's empty.
+When `openapi.schema_classes` (a `list<class-string>`) is non-empty, `mergeGeneratedSchemas()` runs each class through `ez-php/json-schema`'s `SchemaGenerator::generateDefinitions()` (ref prefix `#/components/schemas/`) and merges the results — the class plus any class on a reference cycle — into `components.schemas`, keyed by short class name (the same short name `ApiResponse` uses for `$ref` values, so the two stay consistent). `openapi.version` (`3.0` default, `3.1`) picks the spec version passed on to `OpenApiSpec`. Entries already present under `openapi.components['schemas']` win over the generated ones — `[...$generated, ...$existingSchemas]` puts manual entries last, so a manual override for the same key replaces the generated one rather than the other way around. This is opt-in: the config key defaults to `[]`, and generation is skipped entirely (no `SchemaGenerator` instantiation, no `ez-php/json-schema` autoload) when it's empty.
 
 `boot()` registers `GET /openapi.json` (configurable via `openapi.endpoint`) using `[OpenApiController::class, '__invoke']` so the route appears in the spec itself (via `toCache()`). Also wrapped in `try/catch` for CLI safety.
 
@@ -342,6 +348,8 @@ When `openapi.schema_classes` (a `list<class-string>`) is non-empty, `mergeGener
 
 ## Design decisions and constraints
 
+- **3.0 by default, 3.1 by switch (`openapi.version`).** 3.1 is JSON Schema 2020-12 — the dialect `ez-php/json-schema` emits — so 3.1 output passes component schemas through unchanged. For 3.0, `SchemaDialect` rewrites them (type arrays → `nullable`, `{type: null}` in `anyOf` → `nullable`, a lone nullable `$ref` → `allOf: [$ref]` because 3.0 ignores `$ref` siblings, `null` in `enum` → `nullable`, `examples` → `example`, `const` → `enum`); before, generated `["string", "null"]` types ended up in 3.0 specs unconverted, which is invalid 3.0. Only `components.schemas` is converted — path parameter schemas are generated in plain 3.0 form already.
+- **`openapi.schema_classes` uses `SchemaGenerator::generateDefinitions()`** with `#/components/schemas/`, so recursive DTOs work: the DTO and every class on a cycle land under `components.schemas` by short name, referencing each other there.
 - **Generator accepts routes array, not Router.** Passing the `Router::toCache()` result at construction avoids a circular dependency: the service provider registers a route in `boot()`, and if the generator held a live Router reference it might produce stale or missing route data at registration time. By accepting the array as a constructor parameter, the generator is fully testable without a container.
 - **Lazy binding captures routes at request time.** The `register()` closure calls `$router->toCache()` when `OpenApiGenerator` is resolved from the container — which happens when the `GET /openapi.json` route is dispatched. At that point all routes (including the spec route itself) are already registered.
 - **No component schema generation, but a seam to supply them.** `#[ApiResponse(200, UserSchema::class)]` produces a `$ref` pointing at `#/components/schemas/UserSchema`. The actual schema definition under `components.schemas` is the application's responsibility — adding automatic schema introspection would require deep knowledge of the application's data model and is out of scope. The module does provide the plumbing to fulfil that responsibility: `OpenApiSpec` and `OpenApiGenerator` accept an optional `$components` array, and `OpenApiServiceProvider` reads it from `openapi.components`. Without this the emitted `$ref` values pointed at a `components` section the module never rendered and the application had no way to add, so every generated spec carried unresolvable references.
@@ -374,6 +382,5 @@ No external infrastructure required — all tests run in-process.
 - **Authentication on the `/openapi.json` endpoint** — apply `AuthMiddleware` or `ThrottleMiddleware` to the route in the application's service provider.
 - **Swagger UI / ReDoc rendering** — serving the HTML UI requires shipping static assets; belongs in the application layer or a separate `ez-php/swagger-ui` module.
 - **YAML output** — `toArray()` produces a PHP array; `json_encode()` is used by the controller. YAML output would require a third-party library (e.g. `symfony/yaml`) and is out of scope.
-- **OpenAPI 3.1.x support** — the module targets 3.0.0. 3.1 introduced JSON Schema alignment changes that would require significant structural changes; treat as a separate concern.
 - **Webhook / async API documentation** — `asyncapi` is a different specification; not in scope.
 - **Route-level attribute scanning (non-controller routes)** — closure-based routes have no class/method to reflect on and are intentionally excluded from attribute scanning.

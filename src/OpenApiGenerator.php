@@ -42,12 +42,14 @@ final class OpenApiGenerator
      *                                         remains the application's responsibility (see CLAUDE.md).
      *                                         Supplying them here makes the `$ref` values produced by
      *                                         `#[ApiResponse(schemaClass: ...)]` resolvable.
+     * @param string $specVersion '3.0' (default) or '3.1' — see OpenApiSpec.
      */
     public function __construct(
         private readonly array $routes,
         private readonly string $title = 'API',
         private readonly string $version = '1.0.0',
         private readonly array $components = [],
+        private readonly string $specVersion = '3.0',
     ) {
     }
 
@@ -69,7 +71,7 @@ final class OpenApiGenerator
             $paths[$path][$method] = $operation;
         }
 
-        return new OpenApiSpec($this->title, $this->version, $paths, $this->components);
+        return new OpenApiSpec($this->title, $this->version, $paths, $this->components, $this->specVersion);
     }
 
     /**

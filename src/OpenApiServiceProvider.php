@@ -49,6 +49,7 @@ final class OpenApiServiceProvider extends ServiceProvider
             $title = 'API';
             $version = '1.0.0';
             $components = [];
+            $specVersion = '3.0';
 
             try {
                 $router = $app->make(RouterInterface::class);
@@ -65,6 +66,8 @@ final class OpenApiServiceProvider extends ServiceProvider
                 $version = is_string($raw) ? $raw : '1.0.0';
                 $raw = $config->get('openapi.components', []);
                 $components = is_array($raw) ? $raw : [];
+                $raw = $config->get('openapi.version', '3.0');
+                $specVersion = $raw === '3.1' ? '3.1' : '3.0';
 
                 $rawSchemaClasses = $config->get('openapi.schema_classes', []);
                 $schemaClasses = is_array($rawSchemaClasses) ? array_values($rawSchemaClasses) : [];
@@ -76,7 +79,7 @@ final class OpenApiServiceProvider extends ServiceProvider
                 // Config not bound — use defaults.
             }
 
-            return new OpenApiGenerator($routes, $title, $version, $components);
+            return new OpenApiGenerator($routes, $title, $version, $components, $specVersion);
         });
     }
 
@@ -120,7 +123,9 @@ final class OpenApiServiceProvider extends ServiceProvider
      */
     private function mergeGeneratedSchemas(array $components, array $schemaClasses): array
     {
-        $generator = new SchemaGenerator();
+        // Definitions reference each other (and recursive DTOs themselves) through
+        // #/components/schemas/<ShortName> — the same short name ApiResponse uses.
+        $generator = new SchemaGenerator('#/components/schemas/');
         $generated = [];
 
         foreach ($schemaClasses as $class) {
@@ -128,9 +133,9 @@ final class OpenApiServiceProvider extends ServiceProvider
                 continue;
             }
 
-            $lastSlash = strrpos($class, '\\');
-            $shortName = $lastSlash === false ? $class : substr($class, $lastSlash + 1);
-            $generated[$shortName] = $generator->generate($class);
+            foreach ($generator->generateDefinitions($class) as $name => $schema) {
+                $generated[$name] ??= $schema;
+            }
         }
 
         /** @var array<string, mixed> $existingSchemas */

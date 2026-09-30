@@ -1,6 +1,6 @@
 # ez-php/openapi
 
-OpenAPI 3.0.0 spec generator for the ez-php framework. Annotate controller methods with PHP attributes and get a live `GET /openapi.json` endpoint — no code generation, no annotation parsing framework, no YAML.
+OpenAPI 3.0.0 / 3.1.0 spec generator for the ez-php framework. Annotate controller methods with PHP attributes and get a live `GET /openapi.json` endpoint — no code generation, no annotation parsing framework, no YAML.
 
 ## Installation
 
@@ -82,6 +82,7 @@ Repeatable — multiple parameters per method.
 | `app.version`      | `'1.0.0'`        | Spec `info.version`                            |
 | `openapi.endpoint` | `'/openapi.json'`| URI for the generated spec                     |
 | `openapi.components` | `[]`           | Reusable component objects merged into the spec's `components` key, e.g. `['schemas' => ['User' => ['type' => 'object', ...]]]`. Required for `#[ApiResponse(schemaClass: ...)]` refs to resolve. |
+| `openapi.version`        | `'3.0'`    | `3.0` or `3.1`. 3.1 uses JSON Schema 2020-12 as emitted by `ez-php/json-schema`; for 3.0 the component schemas are converted (type arrays → `nullable`, `examples` → `example`, …). |
 | `openapi.schema_classes` | `[]`       | `list<class-string>` auto-converted into `components.schemas` via `ez-php/json-schema`'s `SchemaGenerator`, keyed by short class name. Requires `ez-php/json-schema` (a soft dependency — install it separately). |
 
 ### Auto-generating component schemas
