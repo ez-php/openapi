@@ -151,9 +151,9 @@ php make_module.php <name> --description="..." --services=mysql,redis --extensio
 
 `<name>` is the kebab-case package name; the namespace is derived as
 `EzPhp\<PascalCase>` (each `-`-separated word upper-cased) unless `--namespace=`
-overrides it. Existing exceptions the guess gets wrong: `bignum` → `BigNum`,
-`dataloader` → `DataLoader`, `dotenv` → `Env`, `graphql` → `GraphQL`, `graphql-subscriptions` → `GraphQLSubscriptions`, `oauth` → `OAuth`,
-`opcache` → `OPCache`, `openapi` → `OpenApi`, `swagger-ui` → `SwaggerUI`, `webauthn` → `WebAuthn` and
+overrides it. Existing exceptions the guess gets wrong: `asyncapi` → `AsyncApi`,
+`bignum` → `BigNum`, `dataloader` → `DataLoader`, `dotenv` → `Env`, `graphql` → `GraphQL`, `graphql-subscriptions` → `GraphQLSubscriptions`, `oauth` → `OAuth`,
+`opcache` → `OPCache`, `openapi` → `OpenApi`, `qrcode` → `QrCode`, `swagger-ui` → `SwaggerUI`, `webauthn` → `WebAuthn` and
 `websocket` → `WebSocket`; `websocket-client` → `WebsocketClient`, `websocket-tls` → `WebsocketTls`,
 `webauthn-metadata` → `WebauthnMetadata` and `metrics-statsd` → `MetricsStatsd` are
 intentional lower-case-word namespaces, and `testing-application` shares `EzPhp\Testing\`
@@ -384,5 +384,5 @@ No external infrastructure required — all tests run in-process.
 - **Authentication on the `/openapi.json` endpoint** — apply `AuthMiddleware` or `ThrottleMiddleware` to the route in the application's service provider.
 - **Swagger UI / ReDoc rendering** — serving the HTML UI requires shipping static assets; belongs in the application layer or a separate `ez-php/swagger-ui` module.
 - **YAML output** — `toArray()` produces a PHP array; `json_encode()` is used by the controller. YAML output would require a third-party library (e.g. `symfony/yaml`) and is out of scope.
-- **Webhook / async API documentation** — `asyncapi` is a different specification; not in scope.
+- **Webhook / async API documentation** — AsyncAPI is a different specification; `ez-php/asyncapi` documents broadcast channels, webhooks and WebSocket messages.
 - **Route-level attribute scanning (non-controller routes)** — closure-based routes have no class/method to reflect on and are intentionally excluded from attribute scanning.
